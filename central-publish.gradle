@@ -1,0 +1,101 @@
+apply plugin: 'maven'
+apply plugin: 'signing'
+
+def isReleaseBuild() {
+    return VERSION_NAME.contains("SNAPSHOT") == false
+}
+
+def getReleaseRepositoryUrl() {
+    return hasProperty('RELEASE_REPOSITORY_URL') ? RELEASE_REPOSITORY_URL : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+}
+
+def getSnapshotRepositoryUrl() {
+    return hasProperty('SNAPSHOT_REPOSITORY_URL') ? SNAPSHOT_REPOSITORY_URL : "https://oss.sonatype.org/content/repositories/snapshots/"
+}
+
+def getRepositoryUsername() {
+    return hasProperty('NEXUS_USERNAME') ? NEXUS_USERNAME : ""
+}
+
+def getRepositoryPassword() {
+    return hasProperty('NEXUS_PASSWORD') ? NEXUS_PASSWORD : ""
+}
+
+task androidJavadocs(type: Javadoc) {
+    options.encoding = "UTF-8"
+    source = android.sourceSets.main.java.srcDirs
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+}
+
+task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
+    classifier = 'javadoc'
+    from androidJavadocs.destinationDir
+}
+
+task androidSourcesJar(type: Jar) {
+    classifier = 'sources'
+    from android.sourceSets.main.java.sourceFiles
+}
+
+artifacts {
+    archives androidSourcesJar
+    archives androidJavadocsJar
+    "${project.buildDir}/outputs/aar/${project.name}-release.aar"
+}
+
+afterEvaluate { project ->
+    // gradle -q uploadArchives
+    uploadArchives {
+        repositories {
+            mavenDeployer {
+                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+
+                pom.groupId = PUBLISH_AAR_GROUP_ID
+                pom.artifactId = PUBLISH_AAR_ARTIFACT_ID
+                pom.version = VERSION_NAME
+
+                repository(url: getReleaseRepositoryUrl()) {
+                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+                }
+                snapshotRepository(url: getSnapshotRepositoryUrl()) {
+                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+                }
+
+                pom.project {
+                    packaging 'aar'
+                    name PUBLISH_AAR_DESCRIPTION
+                    description PUBLISH_AAR_DESCRIPTION
+                    url PUBLISH_AAR_WEBSITE_URL
+                    licenses {
+                        license {
+                            name 'The Apache Software License, Version 2.0'
+                            url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                            distribution 'repo'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id PUBLISH_AAR_DEVELOPER_ID
+                            name PUBLISH_AAR_DEVELOPER_NAME
+                            email PUBLISH_AAR_DEVELOPER_EMAIL
+                        }
+                    }
+                    scm {
+                        connection "${PUBLISH_AAR_WEBSITE_URL}".replace("https://", "scm:git:git://")
+                        developerConnection "${PUBLISH_AAR_WEBSITE_URL}".replace("https://", "scm:git:git://")
+                        url PUBLISH_AAR_WEBSITE_URL
+                    }
+                    issueManagement {
+                        system 'GitHub'
+                        url "${PUBLISH_AAR_WEBSITE_URL}/issues"
+                    }
+                }
+            }
+        }
+    }
+
+    signing {
+        required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
+        sign configurations.archives
+    }
+}
