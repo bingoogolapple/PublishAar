@@ -1,0 +1,93 @@
+apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: 'com.jfrog.bintray'
+
+group = BINTRAY_GROUP_ID
+version = VERSION_NAME
+
+install {
+    repositories.mavenInstaller {
+        pom {
+            project {
+                packaging 'aar'
+                name BINTRAY_DESCRIPTION
+                description BINTRAY_DESCRIPTION
+                url BINTRAY_WEBSITE_URL
+                licenses {
+                    license {
+                        name 'The Apache Software License, Version 2.0'
+                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        distribution 'repo'
+                    }
+                }
+                developers {
+                    developer {
+                        id BINTRAY_DEVELOPER_ID
+                        name BINTRAY_DEVELOPER_NAME
+                        email BINTRAY_DEVELOPER_EMAIL
+                    }
+                }
+                scm {
+                    connection "${BINTRAY_WEBSITE_URL}".replace("https://", "scm:git:git://")
+                    developerConnection "${BINTRAY_WEBSITE_URL}".replace("https://", "scm:git:git://")
+                    url BINTRAY_WEBSITE_URL
+                }
+                issueManagement {
+                    system 'GitHub'
+                    url "${BINTRAY_WEBSITE_URL}/issues"
+                }
+            }
+        }
+    }
+}
+
+task androidJavadocs(type: Javadoc) {
+    options.encoding = "UTF-8"
+    source = android.sourceSets.main.java.srcDirs
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+}
+
+task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
+    classifier = 'javadoc'
+    from androidJavadocs.destinationDir
+}
+
+task androidSourcesJar(type: Jar) {
+    classifier = 'sources'
+    from android.sourceSets.main.java.srcDirs
+}
+
+artifacts {
+    archives androidSourcesJar
+    archives androidJavadocsJar
+}
+
+def getBintrayUserProperty() {
+    return hasProperty('BINTRAY_USER') ? BINTRAY_USER : ""
+}
+
+def getBintrayApiKeyProperty() {
+    return hasProperty('BINTRAY_APIKEY') ? BINTRAY_APIKEY : ""
+}
+
+bintray {
+    user = getBintrayUserProperty()
+    key = getBintrayApiKeyProperty()
+
+    configurations = ['archives']
+
+    pkg {
+        repo = 'maven'
+        name = project.name
+        desc = BINTRAY_DESCRIPTION
+        websiteUrl = BINTRAY_WEBSITE_URL
+        vcsUrl = "${BINTRAY_WEBSITE_URL}.git"
+        issueTrackerUrl = "${BINTRAY_WEBSITE_URL}/issues"
+        licenses = ['Apache-2.0']
+        dryRun = false
+        publish = true
+        version {
+            name = VERSION_NAME
+            vcsTag = VERSION_NAME
+        }
+    }
+}
