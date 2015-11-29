@@ -43,7 +43,7 @@ install {
 task androidJavadocs(type: Javadoc) {
     options.encoding = "UTF-8"
     source = android.sourceSets.main.java.srcDirs
-    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+    classpath += project.files(configurations.compile.files,android.getBootClasspath().join(File.pathSeparator))
 }
 
 task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
