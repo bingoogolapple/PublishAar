@@ -39,7 +39,7 @@ afterEvaluate { project ->
             }
 
             pom.project {
-                groupId = PUBLISH_AAR_GROUP_ID
+                groupId = 'cn.bingoogolapple'
                 artifactId = PUBLISH_AAR_ARTIFACT_ID
                 version = VERSION_NAME
                 packaging 'aar'
@@ -55,9 +55,9 @@ afterEvaluate { project ->
                 }
                 developers {
                     developer {
-                        id PUBLISH_AAR_DEVELOPER_ID
-                        name PUBLISH_AAR_DEVELOPER_NAME
-                        email PUBLISH_AAR_DEVELOPER_EMAIL
+                        id 'bingoogolapple'
+                        name 'bingoogolapple'
+                        email 'bingoogolapple@gmail.com'
                     }
                 }
                 scm {
