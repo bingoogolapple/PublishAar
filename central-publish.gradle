@@ -21,6 +21,10 @@ def getRepositoryPassword() {
     return hasProperty('NEXUS_PASSWORD') ? NEXUS_PASSWORD : ""
 }
 
+def getWebsiteUrl() {
+    return "https://github.com/bingoogolapple/${PUBLISH_AAR_GITHUB_REPOSITORIES_NAME}"
+}
+
 signing {
     required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
     sign configurations.archives
@@ -45,7 +49,7 @@ afterEvaluate { project ->
                 packaging 'aar'
                 name PUBLISH_AAR_DESCRIPTION
                 description PUBLISH_AAR_DESCRIPTION
-                url PUBLISH_AAR_WEBSITE_URL
+                url getWebsiteUrl()
                 licenses {
                     license {
                         name 'The Apache Software License, Version 2.0'
@@ -61,13 +65,13 @@ afterEvaluate { project ->
                     }
                 }
                 scm {
-                    connection "${PUBLISH_AAR_WEBSITE_URL}".replace("https://", "scm:git:git://")
-                    developerConnection "${PUBLISH_AAR_WEBSITE_URL}".replace("https://", "scm:git:git://")
-                    url PUBLISH_AAR_WEBSITE_URL
+                    connection "${getWebsiteUrl()}".replace("https://", "scm:git:git://")
+                    developerConnection "${getWebsiteUrl()}".replace("https://", "scm:git:git://")
+                    url getWebsiteUrl()
                 }
                 issueManagement {
                     system 'GitHub'
-                    url "${PUBLISH_AAR_WEBSITE_URL}/issues"
+                    url "${getWebsiteUrl()}/issues"
                 }
             }
         }
