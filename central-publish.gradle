@@ -25,83 +25,66 @@ def getWebsiteUrl() {
     return "https://github.com/bingoogolapple/${PUBLISH_AAR_GITHUB_REPOSITORIES_NAME}"
 }
 
-task androidJavadocs(type: Javadoc) {
-    source = android.sourceSets.main.java.srcDirs
-    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
-    options {
-        encoding "UTF-8"
-        links "http://docs.oracle.com/javase/7/docs/api/"
-        linksOffline "http://d.android.com/reference", "${android.sdkDirectory}/docs/reference"
-    }
-    exclude '**/BuildConfig.java'
-    exclude '**/R.java'
-}
-
-task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
-    classifier = 'javadoc'
-    from androidJavadocs.destinationDir
-}
-
-task androidSourcesJar(type: Jar) {
-    classifier = 'sources'
-    from android.sourceSets.main.java.sourceFiles
-}
-
-artifacts {
-    archives androidSourcesJar
-    archives androidJavadocsJar
-    "${project.buildDir}/outputs/aar/${project.name}-release.aar"
-}
-
-signing {
-    required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
-    sign configurations.archives
-}
-
 afterEvaluate { project ->
     uploadArchives {
-        repositories.mavenDeployer {
-            beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+        repositories {
+            mavenDeployer {
+                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
 
-            repository(url: getReleaseRepositoryUrl()) {
-                authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
-            }
-            snapshotRepository(url: getSnapshotRepositoryUrl()) {
-                authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
-            }
+                repository(url: getReleaseRepositoryUrl()) {
+                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+                }
+                snapshotRepository(url: getSnapshotRepositoryUrl()) {
+                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+                }
 
-            pom.project {
-                groupId = 'cn.bingoogolapple'
-                artifactId = PUBLISH_AAR_ARTIFACT_ID
-                version = VERSION_NAME
-                packaging 'aar'
-                name PUBLISH_AAR_DESCRIPTION
-                description PUBLISH_AAR_DESCRIPTION
-                url getWebsiteUrl()
-                licenses {
-                    license {
-                        name 'The Apache Software License, Version 2.0'
-                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                        distribution 'repo'
-                    }
-                }
-                developers {
-                    developer {
-                        id 'bingoogolapple'
-                        name 'bingoogolapple'
-                        email 'bingoogolapple@gmail.com'
-                    }
-                }
-                scm {
-                    connection "${getWebsiteUrl()}".replace("https://", "scm:git:git://")
-                    developerConnection "${getWebsiteUrl()}".replace("https://", "scm:git:git://")
+                pom.project {
+                    groupId = 'cn.bingoogolapple'
+                    artifactId = PUBLISH_AAR_ARTIFACT_ID
+                    version = VERSION_NAME
+                    packaging 'aar'
+                    name PUBLISH_AAR_DESCRIPTION
+                    description PUBLISH_AAR_DESCRIPTION
                     url getWebsiteUrl()
-                }
-                issueManagement {
-                    system 'GitHub'
-                    url "${getWebsiteUrl()}/issues"
+                    licenses {
+                        license {
+                            name 'The Apache Software License, Version 2.0'
+                            url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                            distribution 'repo'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id 'bingoogolapple'
+                            name 'bingoogolapple'
+                            email 'bingoogolapple@gmail.com'
+                        }
+                    }
+                    scm {
+                        connection "${getWebsiteUrl()}".replace("https://", "scm:git:git://")
+                        developerConnection "${getWebsiteUrl()}".replace("https://", "scm:git:git://")
+                        url getWebsiteUrl()
+                    }
+                    issueManagement {
+                        system 'GitHub'
+                        url "${getWebsiteUrl()}/issues"
+                    }
                 }
             }
         }
+    }
+
+    signing {
+        required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
+        sign configurations.archives
+    }
+
+    task androidSourcesJar(type: Jar) {
+        classifier = 'sources'
+        from android.sourceSets.main.java.sourceFiles
+    }
+
+    artifacts {
+        archives androidSourcesJar
     }
 }
