@@ -1,2 +1,3 @@
 # PublishAar
-发布Aar到Maven中央仓库和Bintray中
+
+发布 aar 到 Maven 中央仓库和 JCenter 中
