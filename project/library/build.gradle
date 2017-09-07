@@ -10,6 +10,5 @@ android {
     }
 }
 
-apply from: 'android-artifacts.gradle'
-apply from: 'central-publish.gradle'
-apply from: 'bintray-publish.gradle'
+// gradle clean build bintrayUpload
+//apply from: 'https://raw.githubusercontent.com/bingoogolapple/PublishAar/master/jcenter-release.gradle'
