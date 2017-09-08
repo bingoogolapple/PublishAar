@@ -10,5 +10,5 @@ android {
     }
 }
 
-// gradle clean build bintrayUpload
+// gradle clean build bintrayUpload -PpublishAar
 //apply from: 'https://raw.githubusercontent.com/bingoogolapple/PublishAar/master/jcenter-release.gradle'
