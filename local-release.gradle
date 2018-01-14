@@ -3,7 +3,7 @@ apply plugin: 'maven'
 uploadArchives {
     repositories {
         mavenDeployer {
-            repository(url: uri('../repo'))
+            repository(url: uri("${rootDir.path}/repo"))
 
             pom.version=VERSION_NAME
             pom.artifactId=PUBLISH_AAR_ARTIFACT_ID
