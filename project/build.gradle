@@ -23,7 +23,7 @@ allprojects {
             url uri('https://dl.bintray.com/bingoogolapple/maven')
         }
         maven {
-            url uri('../repo')
+            url uri("${System.properties['user.home']}/.gradle/local_repo")
         }
     }
 }
