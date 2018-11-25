@@ -1,13 +1,15 @@
-apply plugin: 'maven'
+if (hasProperty("publishAar")) {
+    apply plugin: 'maven'
 
-uploadArchives {
-    repositories {
-        mavenDeployer {
-            repository(url: uri("${System.properties['user.home']}/.gradle/local_repo"))
+    uploadArchives {
+        repositories {
+            mavenDeployer {
+                repository(url: uri("${System.properties['user.home']}/.gradle/local_repo"))
 
-            pom.version=VERSION_NAME
-            pom.artifactId=PUBLISH_AAR_ARTIFACT_ID
-            pom.groupId="cn.bingoogolapple"
+                pom.version=VERSION_NAME
+                pom.artifactId=PUBLISH_AAR_ARTIFACT_ID
+                pom.groupId="cn.bingoogolapple"
+            }
         }
     }
 }
