@@ -1,3 +1,7 @@
+if (!hasProperty("publishAar")) {
+    return
+}
+
 apply plugin: 'maven'
 apply plugin: 'signing'
 
