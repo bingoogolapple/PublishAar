@@ -3,7 +3,7 @@ apply plugin: 'maven'
 uploadArchives {
     repositories {
         mavenDeployer {
-            repository(url: uri("${rootDir.path}/repo"))
+            repository(url: uri("${System.properties['user.home']}/.gradle/local_repo"))
 
             pom.version=VERSION_NAME
             pom.artifactId=PUBLISH_AAR_ARTIFACT_ID
