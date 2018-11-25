@@ -11,11 +11,11 @@ android {
 }
 
 
-// 上传到「用户目录/.gradle/local_rep」目录中「gradle clean build uploadArchives」
+// 上传到「用户目录/.gradle/local_rep」目录中「gradle clean build uploadArchives -PpublishAar」
 apply from: 'https://raw.githubusercontent.com/bingoogolapple/PublishAar/master/local-release.gradle'
 
-// 上传到 JCenter 中「gradle clean build bintrayUpload」
+// 上传到 JCenter 中「gradle clean build bintrayUpload -PpublishAar」
 apply from: 'https://raw.githubusercontent.com/bingoogolapple/PublishAar/master/jcenter-release.gradle'
 
-// 上传到 Maven 中央仓库中「gradle clean build uploadArchives」
+// 上传到 Maven 中央仓库中「gradle clean build uploadArchives -PpublishAar」
 apply from: 'https://raw.githubusercontent.com/bingoogolapple/PublishAar/master/central-publish.gradle'
