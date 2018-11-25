@@ -11,7 +11,7 @@ android {
 }
 
 
-// 上传到工程下的 repo 目录中「gradle clean build uploadArchives」
+// 上传到「用户目录/.gradle/local_rep」目录中「gradle clean build uploadArchives」
 apply from: 'https://raw.githubusercontent.com/bingoogolapple/PublishAar/master/local-release.gradle'
 
 // 上传到 JCenter 中「gradle clean build bintrayUpload」
