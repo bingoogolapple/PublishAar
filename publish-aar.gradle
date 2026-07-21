@@ -1,0 +1,258 @@
+/*
+ * 通用 Android 库发布脚本（多仓库复用，基于 vanniktech/gradle-maven-publish-plugin 0.37.0）。
+ *
+ * Maven Central：https://github.com/vanniktech/gradle-maven-publish-plugin
+ * GitHub：https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-gradle-registry
+ *
+ * 用法：在 module 的 build.gradle 中以 `apply from: '../publish-aar.gradle'`（仓库根目录）引入，
+ *       并加 `-PpublishAar` 启用（未传入则本脚本直接 return，不影响常规构建）。
+ *
+ * 目标仓库：
+ *   - Maven Central（Central Portal）：始终启用，由 mavenPublishing.publishToMavenCentral() 处理。
+ *   - GitHub Packages：可选，当 ~/.gradle/gradle.properties 同时配置了 githubUsername 与 githubToken 时自动追加。
+ *
+ * 配置项与环境变量总览（属性有两个来源通道，同名时环境变量 > 用户级 > 项目级 > 包级）：
+ *   通道 A gradle.properties 文件
+ *         - 用户级  ~/.gradle/gradle.properties ：本机全局，多仓库复用，含敏感凭据
+ *         - 项目级  根 gradle.properties         ：随仓库入库
+ *         - 包级    module gradle.properties     ：随仓库入库
+ *   通道 B 环境变量（命名须加前缀 ORG_GRADLE_PROJECT_，Gradle 自动映射为同名属性）
+ *         - 用于 CI，可承载多行值（如私钥），而 gradle.properties 不支持多行
+ *
+ * ── 一、本地配置（~/.gradle/gradle.properties，不入库，仅本机）──
+ *   mavenCentralUsername / mavenCentralPassword
+ *       含义：Maven Central Portal 的 User Token（不是官网登录密码），用于发布到 Central。
+ *       获取：登录 https://central.sonatype.com/ → 右上角头像 → "View User Tokens" / "Generate User Token"
+ *   githubUsername / githubToken
+ *       含义：GitHub Packages 用的 PAT。注意 GitHub Packages 仅支持 classic PAT（不支持 fine-grained），
+ *             需 write:packages 权限；两者同时配置时脚本才追加 GitHub Packages 仓库。
+ *       获取：https://github.com/settings/tokens → "Generate new token (classic)" → 勾选 write:packages
+ *       说明：CI 同仓发布可直接用 GITHUB_ACTOR / GITHUB_TOKEN 环境变量（无需单独建 PAT）；
+ *             跨仓消费他人私有包才需要带 read:packages 的 PAT。
+ *   signing.gnupg.keyName
+ *       含义：本机 GPG 钥匙环中用于签名的密钥 ID（如 45BBA8B1）。
+ *       作用：配合脚本中的 signing.useGpgCmd() 复用本机钥匙环签名，无需导出私钥。
+ *       获取：
+ *         1) 安装 GPG：macOS `brew install gnupg`；Windows 用 Gpg4win；Linux `apt install gnupg`。
+ *         2) 生成密钥（如已有可跳过）：`gpg --full-generate-key`（RSA、4096、0、bingoogolapple、bingoogolapple@gamil.com、），
+ *         3) 查看密钥 ID：`gpg --list-secret-keys`，输出中 sec 底部的那行，赋值给 signing.gnupg.keyName
+ *
+ * ── 二、仓库内配置（gradle.properties，随仓库入库，可版本管理）──
+ *   项目级  根 gradle.properties
+ *                                       必填：VERSION_NAME（库发布坐标版本，VERSION_CODE 仅 demo 示例工程使用，不参与库发布）
+ *                                       选填：PUBLISH_AAR_GROUP_ID（默认 cn.bingoogolapple）
+ *   包级    module gradle.properties  : PUBLISH_AAR_*
+ *                                       必填：PUBLISH_AAR_ARTIFACT_ID、PUBLISH_AAR_DESCRIPTION
+ *                                       选填：PUBLISH_AAR_NAME（默认同 DESCRIPTION）
+ *
+ * ── 三、远程/CI 配置（环境变量，命名前缀 ORG_GRADLE_PROJECT_）──
+ *   ORG_GRADLE_PROJECT_signingInMemoryKey
+ *       含义：完整「多行」ASCII 装甲私钥，由 `gpg --export-secret-keys --armor <id>` 导出。
+ *       为何用环境变量：gradle.properties 不支持多行值，私钥会被折成单行导致解析失败。
+ *       配置位置：CI 平台 Secret（如 GitHub Actions 的 secrets.SIGNING_KEY），由 workflow 注入进程环境。
+ *   ORG_GRADLE_PROJECT_signingInMemoryKeyId
+ *       含义：内存密钥的 ID。
+ *   ORG_GRADLE_PROJECT_signingInMemoryKeyPassword
+ *       含义：内存密钥的口令（无口令留空）。
+ *   （可选）ORG_GRADLE_PROJECT_mavenCentralUsername / ORG_GRADLE_PROJECT_mavenCentralPassword
+ *       含义：CI 场景也可把 Central 凭据、GitHub Packages 凭据以环境变量注入，避免在多处重复存放
+ *             （本地则在 ~/.gradle/gradle.properties 配置，二者取其一即可）。
+ *   （可选）ORG_GRADLE_PROJECT_githubUsername / ORG_GRADLE_PROJECT_githubToken
+ *       含义：CI 场景也可把 Central 凭据、GitHub Packages 凭据以环境变量注入，避免在多处重复存放
+ *             （本地则在 ~/.gradle/gradle.properties 配置，二者取其一即可）。
+ *
+ * 判定逻辑：脚本仅在 signingInMemoryKey（即 ORG_GRADLE_PROJECT_signingInMemoryKey）为 null 时
+ *           走本机 GPG 钥匙环；CI 注入该环境变量后自动切换为内存密钥签名，二者互不冲突。
+ *
+ * ── 四、启用开关 -PpublishAar（命令行传入，不写入任何 gradle.properties）──
+ *   含义：构建属性开关。执行发布命令时以 `-PpublishAar` 形式附加，未传入则本脚本直接 return，
+ *         不影响模块的常规构建（assemble / build 等）。
+ *   用法示例：./gradlew publishAar -PpublishAar
+ *   说明：它既不是 gradle.properties 里的配置项，也不是环境变量，纯粹由调用方在命令行决定本次构建是否启用发布。
+ *
+ * 发布命令（加 -PpublishAar 启用；便捷任务已封装 clean + build + 发布，故命令可简化为）：
+ *   Maven Central 正式版(手动 Release)
+ *       简写 : ./gradlew publishAar -PpublishAar
+ *       原始 : ./gradlew clean :library:build :library:publishToMavenCentral -PpublishAar
+ *   Maven Central 正式版(自动 Release)
+ *       简写 : ./gradlew publishAarRelease -PpublishAar
+ *       原始 : ./gradlew clean :library:build :library:publishAndReleaseToMavenCentral -PpublishAar
+ *   Maven Central 快照版（VERSION_NAME 以 -SNAPSHOT 结尾，上传即生效。需要去 https://central.sonatype.com/publishing/namespaces 中启用对应命名空间的 Enable SNAPSHOTs 才能上传成功，否则会报 403）
+ *       简写 : ./gradlew publishAar -PpublishAar
+ *       原始 : ./gradlew clean :library:build :library:publishToMavenCentral -PpublishAar
+ *   GitHub Packages (正式/快照同命令)
+ *       简写 : ./gradlew publishAarGpr -PpublishAar
+ *       原始 : ./gradlew clean :library:build :library:publishAllPublicationsToGitHubPackagesRepository -PpublishAar
+ *   本地调试 Maven Local
+ *       简写 : ./gradlew publishToMavenLocal -PpublishAar
+ *       原始 : ./gradlew clean :library:build :library:publishToMavenLocal -PpublishAar
+ *
+ * ── 五、发布产物去哪查（坐标 = GROUP_ID:ARTIFACT_ID:VERSION_NAME，例 cn.bingoogolapple:bgaswipeitemlayout:1.0.0）──
+ *   Maven Central（正式版 / 快照版，经 Central Portal API 发布）
+ *       最终落点：正式版进入 Maven Central 全球 CDN https://repo1.maven.org/maven2/
+ *                 按坐标映射为 cn/bingoogolapple/bgaswipeitemlayout/1.0.0/ 目录（含 .aar / .pom / 签名 .asc）。
+ *               快照版（VERSION_NAME 以 -SNAPSHOT 结尾）落点不同，发到 https://central.sonatype.com/repository/maven-snapshots/
+ *       去哪查  ：(1) Central Portal 控制台 https://central.sonatype.com → 右上角头像 → "Publishing" → "Deployments"
+ *                     看 Deployment 状态：VALIDATED / PUBLISHING / PUBLISHED；用 publishAar（手动 Release）需回此页点 Release，
+ *                     publishAarRelease（自动 Release）会一步到位，无需手动操作。
+ *                 (2) 正式版 Release 后到 https://central.sonatype.com 搜 GROUP_ID，或直接访问上面的 CDN 链接确认文件已同步
+ *                     （CDN 同步通常有数分钟延迟，未立刻搜到属正常）。
+ *   GitHub Packages（可选，仅当 ~/.gradle/gradle.properties 同时配置了 githubUsername + githubToken 才启用）
+ *       最终落点：https://maven.pkg.github.com/OWNER/REPO （OWNER 须小写；包可见性跟随仓库设置，私有仓则仅协作者可见）。
+ *       去哪查  ：GitHub 仓库页面 → 右侧 "Packages"（链接形如 https://github.com/OWNER/REPO/packages ）
+ *                 → 进入对应包查看版本与文件。消费方需在 settings.gradle 配置该仓库（OWNER 小写）并带 read:packages 凭据才能拉取。
+ *   本地调试 Maven Local
+ *       最终落点：本机 ~/.m2/repository/cn/bingoogolapple/bgaswipeitemlayout/1.0.0/
+ *       去哪查  ：直接打开该本地目录查看 .aar / .pom / .asc 文件是否齐全；或新建/调整示例工程以
+ *                 implementation 'cn.bingoogolapple:bgaswipeitemlayout:1.0.0' 引用，确认能正常解析依赖即说明发布成功。
+ *   消费方引用提示：
+ *       - 正式版：mavenCentral() 已是 Gradle 默认源，无需额外配置即可 implementation 上述坐标。被使用后会下载到本地的 ~/.gradle/caches/modules-2/files-2.1 目录中。
+ *       - 快照版：需在 settings.gradle 额外添加快照仓库
+ *                 maven { url = uri("https://central.sonatype.com/repository/maven-snapshots/") }。
+ *       - GitHub Packages：需在 settings.gradle 添加 maven { url = uri("https://maven.pkg.github.com/OWNER/REPO") }（OWNER 必须小写）
+ *                 并配置带 read:packages 权限的凭据。被使用后会下载到本地的 ~/.gradle/caches/modules-2/files-2.1 目录中。
+ */
+
+if (!hasProperty('publishAar')) {
+    return
+}
+
+apply plugin: 'com.vanniktech.maven.publish'
+
+// 必填校验：必须在取值前执行，缺失即抛出友好的 GradleException。
+// 注意：若用裸属性访问（如 PUBLISH_AAR_ARTIFACT_ID）会在缺省时直接抛难懂的 MissingPropertyException，
+//       导致下方校验形同虚设，故此处统一用 findProperty 先校验再取值。
+['PUBLISH_AAR_ARTIFACT_ID', 'PUBLISH_AAR_DESCRIPTION', 'VERSION_NAME'].each { p ->
+    if (!project.hasProperty(p)) {
+        throw new GradleException("发布所需的参数 '$p' 未定义，请检查 gradle.properties 的分层配置")
+    }
+}
+
+// 包级参数（PUBLISH_AAR_*，带默认值）；校验已通过，这里安全取值
+def publishAarArtifactId = project.findProperty('PUBLISH_AAR_ARTIFACT_ID')
+def publishAarDescription = project.findProperty('PUBLISH_AAR_DESCRIPTION')
+def publishAarGroupId = project.findProperty('PUBLISH_AAR_GROUP_ID') ?: 'cn.bingoogolapple'
+def publishAarName = project.findProperty('PUBLISH_AAR_NAME') ?: publishAarDescription
+def publishAarVersion = project.findProperty('VERSION_NAME')
+
+// 开发者与许可证信息（默认值，可覆盖）
+def pomDeveloperId = project.findProperty('POM_DEVELOPER_ID') ?: 'bingoogolapple'
+def pomDeveloperName = project.findProperty('POM_DEVELOPER_NAME') ?: pomDeveloperId
+def pomDeveloperEmail = project.findProperty('POM_DEVELOPER_EMAIL') ?: 'bingoogolapple@gmail.com'
+def pomLicenseName = project.findProperty('POM_LICENSE_NAME') ?: 'The Apache Software License, Version 2.0'
+def pomLicenseUrl = project.findProperty('POM_LICENSE_URL') ?: 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+
+// 由开发者 ID + rootProject.name 推导 GitHub / SCM 坐标（GitHub Packages 仓库地址复用同一 slug）
+def githubOwner = pomDeveloperId
+def githubRepoName = rootProject.name
+def githubSlug = "${githubOwner}/${githubRepoName}"
+def pomUrl = "https://github.com/${githubSlug}"
+def pomScmConnection = "scm:git:git://github.com/${githubSlug}.git"
+def pomScmDevConnection = "scm:git:ssh://github.com/${githubSlug}.git"
+
+mavenPublishing {
+    coordinates(publishAarGroupId, publishAarArtifactId, publishAarVersion)
+    pom {
+        name = publishAarName
+        description = publishAarDescription
+        url = pomUrl
+        licenses {
+            license {
+                name = pomLicenseName
+                url = pomLicenseUrl
+            }
+        }
+        developers {
+            developer {
+                id = pomDeveloperId
+                name = pomDeveloperName
+                email = pomDeveloperEmail
+            }
+        }
+        scm {
+            url = pomUrl
+            connection = pomScmConnection
+            developerConnection = pomScmDevConnection
+        }
+    }
+    // 经 Central Portal API 发布：正式版上传后需手动/自动 Release，-SNAPSHOT 上传即生效（发到 maven-snapshots）
+    publishToMavenCentral()
+    // Maven Central 强制签名（所有 publication 均签名）
+    signAllPublications()
+}
+
+// 签名：CI 用环境变量 ORG_GRADLE_PROJECT_signingInMemoryKey 注入内存密钥时走 in-memory；
+//       否则（本地）复用本机 GPG 钥匙环。afterEvaluate 确保覆盖插件默认签名配置。
+project.afterEvaluate {
+    if (project.findProperty('signingInMemoryKey') == null) {
+        signing.useGpgCmd()
+    }
+}
+
+// 顺序约束：clean 必须先于 build 完成。mustRunAfter 仅在 clean 也出现在本次执行图时才生效，
+// 正常构建（不带 -PpublishAar 或没跑 clean）完全无副作用；不要用 dependsOn clean 以免强制拉入 clean。
+tasks.named('build') { mustRunAfter clean }
+
+// 便捷任务：封装 clean + build + 发布，缩短命令行（仅需 ./gradlew publishAar -PpublishAar）
+// 注：publishToMavenCentral / publishAndReleaseToMavenCentral 已隐式依赖 build，无需重复声明 build
+tasks.register('publishAar') {
+    group = 'publishing'
+    dependsOn clean, publishToMavenCentral
+}
+tasks.register('publishAarRelease') {
+    group = 'publishing'
+    dependsOn clean, publishAndReleaseToMavenCentral
+}
+
+// GitHub Packages（可选目标仓库）：仅当 githubUsername + githubToken 同时提供时启用。
+// 注意：这里只追加「目标仓库」，不写 publications——发布物（.aar + sources/javadoc/pom）已由 vanniktech 插件
+//       基于 Android 库变体自动创建（无需像纯 maven-publish 那样手写 publications { gpr(MavenPublication) { from(components.java) } }）。
+//       发布任务 publishAllPublicationsToGitHubPackagesRepository 会把所有已存在的 publication 推到该仓库。
+def githubUsername = project.findProperty('githubUsername')
+def githubToken = project.findProperty('githubToken')
+if (githubUsername && githubToken) {
+    publishing {
+        repositories {
+            maven {
+                name = 'GitHubPackages'
+                // 注册表 URL 要求 OWNER 小写（官方文档规定，否则 404/鉴权失败），repoName 大小写不敏感故保持原样。
+                url = uri("https://maven.pkg.github.com/${githubOwner.toLowerCase()}/${githubRepoName}")
+                credentials {
+                    username = githubUsername
+                    password = githubToken
+                }
+            }
+        }
+    }
+    // 便捷任务：仅在 GitHub Packages 仓库启用时注册
+    // 注：publishAllPublicationsToGitHubPackagesRepository 已隐式依赖 build，无需重复声明；clean 顺序由上方 mustRunAfter 保证
+    tasks.register('publishAarGpr') {
+        group = 'publishing'
+        dependsOn clean, publishAllPublicationsToGitHubPackagesRepository
+    }
+}
+
+// 使用时 repositories 配置说明
+// 本地调试：优先解析 publishReleasePublicationToMavenLocal 发布的包；
+// 若要强制走远程包，临时注释掉本行再构建即可（常态保留便于本地联调，不影响已发布的远程包解析）。
+// mavenLocal()
+
+// GitHub Packages（可选）：有 githubUsername+githubToken 才挂；公开包也需 read:packages 的 classic PAT 鉴权，无凭据则不挂以免 401 中断解析。包坐标同 Maven Central，仓库地址 OWNER 须小写。
+// 如要强制走 mavenCentral 包，临时注释掉下面行再构建即可（常态保留便于本地联调，不影响已发布的远程包解析）。
+// def ghUser = project.findProperty('githubUsername')
+// def ghToken = project.findProperty('githubToken')
+// if (ghUser && ghToken) {
+//     maven {
+//         name = 'GitHubPackages'
+//         url = uri("https://maven.pkg.github.com/bingoogolapple/BGASwipeItemLayout-Android")
+//         credentials {
+//             username = ghUser
+//             password = ghToken
+//         }
+//     }
+// }
+
+// SNAPSHOT 仓库（Maven Central 快照落点，与正式仓库 repo1.maven.org 不同）：
+// 仅当 VERSION_NAME 以 -SNAPSHOT 结尾、且命名空间已开启 Enable SNAPSHOTs 时才有内容。
+// 常态保留便于拉取快照包；若只想走正式版，临时注释掉本段即可。
+// maven { url = uri("https://central.sonatype.com/repository/maven-snapshots/") }

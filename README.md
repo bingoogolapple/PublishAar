@@ -1,6 +1,10 @@
 # PublishAar
 
-发布 aar 到 Maven 中央仓库和 JCenter 中
+发布 aar 到：
+- Maven Central
+- Maven Local
+- GitHub Packages
+- JCenter（已废弃）
 
 ## 作者联系方式
 
